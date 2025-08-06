@@ -24,7 +24,7 @@ python run_demo.py
 ```
 
 ### < RTX40 Series
-go to original README, change back the commit e3d597b8c6b851d053094ebd6fa240191c5238f8, rewrite the Dockerfile to the right cuda version, use docker/dockerfile as template, all this is not recommended because it was not tested
+go to original README, change back the commit e3d597b8c6b851d053094ebd6fa240191c5238f8, rewrite the Dockerfile to the right cuda version, use docker/dockerfile as template, all this is not recommended because it was not tested with ROS implementation
 
 # Original README -> FoundationPose: Unified 6D Pose Estimation and Tracking of Novel Objects
 [[Paper]](https://arxiv.org/abs/2312.08344) [[Website]](https://nvlabs.github.io/FoundationPose/)
