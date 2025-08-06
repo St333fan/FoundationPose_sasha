@@ -1,4 +1,32 @@
-# FoundationPose: Unified 6D Pose Estimation and Tracking of Novel Objects
+# ROS-FoundationPose
+## Setup Data
+1) Download all network weights from [here](https://drive.google.com/drive/folders/1DFezOAD0oD1BblsXVxqDsl8fj0qzB82i?usp=sharing) and put them under the folder `weights/`. For the refiner, you will need `2023-10-28-18-33-37`. For scorer, you will need `2024-01-11-20-02-45`.
+
+1) [Download demo data](https://drive.google.com/drive/folders/1pRyFmxYXmAnpku7nGRioZaKrVJtIsroP?usp=sharing) and extract them under the folder `demo_data/`
+
+## Build Image
+### New gen RTX40 Series and up compatible
+```bash
+docker build --network host -t foundationpose_ros .
+bash docker/run_container_ros.sh
+```
+If it's the first time you launch the container, you need to build extensions. Run this command *inside* the Docker container.
+```bash
+bash build_all.sh
+```
+Later you can execute into the container without re-build.
+```bash
+docker exec -it foundationpose bash
+```
+Test installation
+```bash
+python run_demo.py
+```
+
+### < RTX40 Series
+go to original README
+
+# Original README -> FoundationPose: Unified 6D Pose Estimation and Tracking of Novel Objects
 [[Paper]](https://arxiv.org/abs/2312.08344) [[Website]](https://nvlabs.github.io/FoundationPose/)
 
 This is the official implementation of our paper to be appeared in CVPR 2024 (Highlight)
