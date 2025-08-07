@@ -127,5 +127,4 @@ RUN ln -sf /bin/bash /bin/sh
 
 WORKDIR /code
 
-CMD ["/bin/bash", "-c", "source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && \
-    "python", "/code/foundationpose_ros_wrapper.py"]
+CMD ["/bin/bash", "-c", "source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && python /code/foundationpose_ros_wrapper.py"]
