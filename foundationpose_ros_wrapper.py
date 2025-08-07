@@ -79,18 +79,35 @@ class FoundationPose_ROS:
             # Need to switch to different object or create first estimator
             rospy.loginfo(f"Switching estimator to object: {obj_name}")
             
+            if obj_name not in self.meshes:
+                raise ValueError(f"No mesh available for object: {obj_name}")
+            
             mesh = self.meshes[obj_name]
-            self.current_estimator = FoundationPose(
-                model_pts=mesh.vertices,
-                model_normals=mesh.vertex_normals,
-                mesh=mesh,
-                scorer=self.scorer,  # Shared
-                refiner=self.refiner,  # Shared
-                debug_dir=None,
-                debug=0,
-                glctx=self.glctx  # Shared
-            )
-            self.current_object = obj_name
+            print(f"  -> Using mesh with {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+            
+            # Ensure vertex normals are available
+            if not hasattr(mesh, 'vertex_normals') or mesh.vertex_normals is None:
+                rospy.loginfo(f"Computing vertex normals for {obj_name}")
+                mesh.compute_vertex_normals()
+            
+            print(f"  -> Mesh vertex normals shape: {mesh.vertex_normals.shape if mesh.vertex_normals is not None else 'None'}")
+            
+            try:
+                self.current_estimator = FoundationPose(
+                    model_pts=mesh.vertices,
+                    model_normals=mesh.vertex_normals,
+                    mesh=mesh,
+                    scorer=self.scorer,  # Shared
+                    refiner=self.refiner,  # Shared
+                    debug_dir="debug",  # this is needed for FoundationPose, but we don't use it here
+                    debug=0,
+                    glctx=self.glctx  # Shared
+                )
+                self.current_object = obj_name
+                print(f"  -> FoundationPose estimator created successfully for {obj_name}")
+            except Exception as e:
+                print(f"  -> ERROR creating FoundationPose estimator: {str(e)}")
+                raise e
                 
         return self.current_estimator
 
@@ -126,9 +143,26 @@ class FoundationPose_ROS:
         # Convert ROS messages to numpy arrays
         image = ros_numpy.numpify(rgb)
         
+        # Ensure RGB image is in correct format (H, W, 3) with uint8
+        if len(image.shape) == 3 and image.shape[2] == 3:
+            if image.dtype != np.uint8:
+                if image.max() <= 1.0:  # Normalized to [0,1]
+                    image = (image * 255).astype(np.uint8)
+                else:
+                    image = image.astype(np.uint8)
+        else:
+            print(f"WARNING: Unexpected RGB image format: {image.shape}, dtype: {image.dtype}")
+        
         try:
             depth_img = ros_numpy.numpify(depth)
+            # Convert depth image to supported dtype (float32) if needed
+            if depth_img.dtype == np.uint16:
+                # Convert from millimeters to meters if needed
+                depth_img = depth_img.astype(np.float32) / 1000.0
+            elif depth_img.dtype != np.float32:
+                depth_img = depth_img.astype(np.float32)
             print("Depth image: Available")
+            print(f"Depth range: min={depth_img.min():.3f}, max={depth_img.max():.3f}")
         except Exception as e:
             rospy.logwarn("Missing depth image in the goal.")
             depth_img = None
@@ -146,6 +180,17 @@ class FoundationPose_ROS:
         if mask_detections:
             print("Mask", mask_detections[0].shape, mask_detections[0].dtype)
             print(f"Number of masks: {len(mask_detections)}")
+            print(f"First mask unique values: {np.unique(mask_detections[0])}")
+            
+            # Ensure masks are binary (0 or 255)
+            for i, mask in enumerate(mask_detections):
+                if mask.max() > 1:
+                    # Already in 0-255 format
+                    pass
+                else:
+                    # Convert from 0-1 to 0-255
+                    mask_detections[i] = (mask * 255).astype(np.uint8)
+                    print(f"Converted mask {i} from 0-1 to 0-255 format")
 
         # Process each detected object
         valid_class_names = []
@@ -174,16 +219,40 @@ class FoundationPose_ROS:
                 
             mask = mask_detections[i]
             
+            # Debug mask information
+            mask_pixels = np.sum(mask > 0)
+            print(f"  -> Mask has {mask_pixels} non-zero pixels")
+            if mask_pixels == 0:
+                print(f"  -> Empty mask for {class_name}, skipping")
+                continue
+            
             # Get estimator for this object
             try:
                 estimator = self.get_estimator_for_object(mapped_name)
                 print(f"  -> Estimator ready for {mapped_name}")
                 
+                # Debug input data
+                print(f"  -> Image shape: {image.shape}, depth shape: {depth_img.shape if depth_img is not None else 'None'}")
+                print(f"  -> Mask shape: {mask.shape}, mask dtype: {mask.dtype}")
+                print(f"  -> Intrinsics: {self.intrinsics}")
+                print(f"  -> Refinement iterations: {self.est_refine_iter}")
+                
                 # Run pose estimation (no tracking, fresh estimation each time)
+                print(f"  -> Running pose estimation for {mapped_name}...")
+                
+                # Check if depth is available - FoundationPose needs depth for registration
+                if depth_img is None:
+                    print(f"  -> ERROR: Depth image required for pose estimation but not available")
+                    continue
+                
                 pose_result = estimator.register(K=self.intrinsics, rgb=image, depth=depth_img, 
                                                 ob_mask=mask, iteration=self.est_refine_iter)
                 
+                print(f"  -> Pose estimation returned: {type(pose_result)}")
                 if pose_result is not None:
+                    print(f"  -> Pose result shape: {pose_result.shape if hasattr(pose_result, 'shape') else 'No shape'}")
+                    print(f"  -> Pose result:\n{pose_result}")
+                    
                     # Convert pose to ROS Pose message
                     pose_msg = Pose()
                     
@@ -193,8 +262,16 @@ class FoundationPose_ROS:
                         translation = pose_result[:3, 3]
                         rotation_matrix = pose_result[:3, :3]
                         
+                        print(f"  -> Translation: {translation}")
+                        print(f"  -> Rotation matrix:\n{rotation_matrix}")
+                        
+                        # Check if pose is identity/zero (indicating failure)
+                        if np.allclose(translation, 0) and np.allclose(rotation_matrix, np.eye(3)):
+                            print(f"  -> WARNING: Pose result is identity matrix - estimation likely failed")
+                        
                         # Convert rotation matrix to quaternion
                         quaternion = tf3d.quaternions.mat2quat(rotation_matrix)
+                        print(f"  -> Quaternion: {quaternion}")
                         
                         pose_msg.position = Point(x=float(translation[0]), 
                                                 y=float(translation[1]), 
@@ -203,6 +280,10 @@ class FoundationPose_ROS:
                                                         y=float(quaternion[2]), 
                                                         z=float(quaternion[3]), 
                                                         w=float(quaternion[0]))
+                        
+                        print(f"  -> Finished pose for {class_name}:")
+                        print(f"     Position: [{translation[0]:.6f}, {translation[1]:.6f}, {translation[2]:.6f}]")
+                        print(f"     Quaternion: [{quaternion[0]:.6f}, {quaternion[1]:.6f}, {quaternion[2]:.6f}, {quaternion[3]:.6f}]")
                         
                         pose_results.append(pose_msg)
                         valid_class_names.append(class_name)
