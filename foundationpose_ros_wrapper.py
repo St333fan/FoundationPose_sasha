@@ -59,8 +59,14 @@ class FoundationPose_ROS:
         for obj_name, mesh_file in self.mesh_files.items():
             if os.path.exists(mesh_file):
                 mesh = trimesh.load(mesh_file)
+                
+                # Scale mesh from millimeters to meters (YCB-V models are in mm)
+                # FoundationPose expects models in meters to match camera depth units
+                rospy.loginfo(f"Scaling mesh {obj_name} from mm to meters (factor: 0.001)")
+                mesh.vertices = mesh.vertices / 1000.0  # Convert mm to m
+                
                 self.meshes[obj_name] = mesh
-                rospy.loginfo(f"Loaded mesh for {obj_name}: {mesh_file}")
+                rospy.loginfo(f"Loaded and scaled mesh for {obj_name}: {mesh_file}")
             else:
                 rospy.logwarn(f"Mesh file not found for {obj_name}: {mesh_file}")
 
@@ -233,7 +239,6 @@ class FoundationPose_ROS:
                 
                 # Debug input data
                 print(f"  -> Image shape: {image.shape}, depth shape: {depth_img.shape if depth_img is not None else 'None'}")
-                print(f"  -> Mask shape: {mask.shape}, mask dtype: {mask.dtype}")
                 print(f"  -> Intrinsics: {self.intrinsics}")
                 print(f"  -> Refinement iterations: {self.est_refine_iter}")
                 
@@ -250,8 +255,6 @@ class FoundationPose_ROS:
                 
                 print(f"  -> Pose estimation returned: {type(pose_result)}")
                 if pose_result is not None:
-                    print(f"  -> Pose result shape: {pose_result.shape if hasattr(pose_result, 'shape') else 'No shape'}")
-                    print(f"  -> Pose result:\n{pose_result}")
                     
                     # Convert pose to ROS Pose message
                     pose_msg = Pose()
@@ -261,18 +264,14 @@ class FoundationPose_ROS:
                         # pose_result is a 4x4 transformation matrix
                         translation = pose_result[:3, 3]
                         rotation_matrix = pose_result[:3, :3]
-                        
-                        print(f"  -> Translation: {translation}")
-                        print(f"  -> Rotation matrix:\n{rotation_matrix}")
-                        
+
                         # Check if pose is identity/zero (indicating failure)
                         if np.allclose(translation, 0) and np.allclose(rotation_matrix, np.eye(3)):
                             print(f"  -> WARNING: Pose result is identity matrix - estimation likely failed")
                         
                         # Convert rotation matrix to quaternion
                         quaternion = tf3d.quaternions.mat2quat(rotation_matrix)
-                        print(f"  -> Quaternion: {quaternion}")
-                        
+
                         pose_msg.position = Point(x=float(translation[0]), 
                                                 y=float(translation[1]), 
                                                 z=float(translation[2]))
@@ -283,7 +282,6 @@ class FoundationPose_ROS:
                         
                         print(f"  -> Finished pose for {class_name}:")
                         print(f"     Position: [{translation[0]:.6f}, {translation[1]:.6f}, {translation[2]:.6f}]")
-                        print(f"     Quaternion: [{quaternion[0]:.6f}, {quaternion[1]:.6f}, {quaternion[2]:.6f}, {quaternion[3]:.6f}]")
                         
                         pose_results.append(pose_msg)
                         valid_class_names.append(class_name)
