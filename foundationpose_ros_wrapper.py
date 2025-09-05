@@ -310,7 +310,7 @@ class FoundationPose_ROS:
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file', 
-                       default="./foundationpose_configs/cfg_ros_ycbv_inference.json",
+                       default="./foundationpose_configs/cfg_ros_manibot_inference.json",
                        help='Path to configuration file')
     opt = parser.parse_args()
     return opt
