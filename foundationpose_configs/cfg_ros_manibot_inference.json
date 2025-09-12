@@ -8,7 +8,7 @@
     0.0, 0.0, 1.0
   ],
   "mesh_files": {
-    "001_ahorn_sirup": "/code/templates/manibot/models/models/obj_000001.ply"
+    "001_ahorn_sirup": "/code/datasets/manibot/models/obj_000001.ply"
   },
   "est_refine_iter": 5,
   "track_refine_iter": 2,
