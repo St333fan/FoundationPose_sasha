@@ -156,3 +156,5 @@ data/
 logs/
 !BundleTrack/XMem/inference/data
 run_used.yml
+
+ycbv_test_bop19

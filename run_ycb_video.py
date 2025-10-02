@@ -53,6 +53,11 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose, debug=False
     logging.info(f"{i}/{len(i_frames)}, video:{reader.get_video_id()}, id_str:{id_str}")
     color = reader.get_color(i_frame)
     depth = reader.get_depth(i_frame)
+    #print(depth)
+
+    # Scale depth to millimeters (assuming depth is currently in meters)
+    #depth = depth * 1/1000
+
 
     H,W = color.shape[:2]
     scene_ob_ids = reader.get_instance_ids_in_image(i_frame)
@@ -74,6 +79,26 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose, debug=False
       tmp.apply_transform(pose)
       tmp.export(f'{debug_dir}/model_tf.obj')
 
+        # Save debug images
+      cv2.imwrite(f'{debug_dir}/color_{i_frame:06d}.png', color)
+      cv2.imwrite(f'{debug_dir}/mask_{i_frame:06d}.png', ob_mask.astype(np.uint8)*255)
+        
+        # Project mesh vertices to image for visualization
+      verts_h = np.concatenate([est.mesh.vertices, np.ones((est.mesh.vertices.shape[0], 1))], axis=1)  # (N,4)
+        # Apply pose
+      verts_cam = (pose @ verts_h.T).T[:, :3]  # (N,3)
+        # Project to 2D
+      fx, fy = reader.K[0,0], reader.K[1,1]
+      cx, cy = reader.K[0,2], reader.K[1,2]
+      zs = verts_cam[:,2]
+      us = (verts_cam[:,0] * fx / zs + cx).astype(int)
+      vs = (verts_cam[:,1] * fy / zs + cy).astype(int)
+      debug_img = color.copy()
+      for u, v, z in zip(us, vs, zs):
+        if 0 <= u < W and 0 <= v < H and z > 0:
+          cv2.circle(debug_img, (u, v), 2, (0,255,0), -1)
+      cv2.imwrite(f'{debug_dir}/projection_{i_frame:06d}.png', debug_img)
+
     result[video_id][id_str][ob_id] = pose
 
   return result
@@ -90,8 +115,9 @@ def run_pose_estimation():
 
   reader_tmp = YcbVideoReader(video_dirs[0])
   glctx = dr.RasterizeCudaContext()
-  mesh_tmp = trimesh.primitives.Box(extents=np.ones((3)), transform=np.eye(4))
-  est = FoundationPose(model_pts=mesh_tmp.vertices.copy(), model_normals=mesh_tmp.vertex_normals.copy(), symmetry_tfs=None, mesh=mesh_tmp, scorer=None, refiner=None, glctx=glctx, debug_dir=debug_dir, debug=debug)
+  mesh_tmp = trimesh.creation.box(extents=np.ones((3)))
+  est = FoundationPose(model_pts=mesh_tmp.vertices.copy(), model_normals=mesh_tmp.vertex_normals.copy(), symmetry_tfs=None, mesh=mesh_tmp, scorer=None, refiner=None, glctx=glctx,      debug_dir=debug_dir, debug=debug)
+
 
   ob_ids = reader_tmp.ob_ids
 
@@ -100,10 +126,17 @@ def run_pose_estimation():
       mesh = reader_tmp.get_reconstructed_mesh(ob_id, ref_view_dir=opt.ref_view_dir)
     else:
       mesh = reader_tmp.get_gt_mesh(ob_id)
+
+    # ycbv mesh is in mm, convert to meters (better to not scale depth)
+    #mesh.vertices = mesh.vertices * 0.001
+
     symmetry_tfs = reader_tmp.symmetry_tfs[ob_id]
 
     args = []
     for video_dir in video_dirs:
+      #print(video_dir)# /home/stefan/PycharmProjects/FoundationPose/ycbv_test_bop19/test/000048
+      #if video_dir != "/home/stefan/PycharmProjects/FoundationPose/ycbv_test_bop19/test/000048":
+      #  continue
       reader = YcbVideoReader(video_dir, zfar=1.5)
       scene_ob_ids = reader.get_instance_ids_in_image(0)
       if ob_id not in scene_ob_ids:
@@ -111,8 +144,10 @@ def run_pose_estimation():
       video_id = reader.get_video_id()
 
       for i in range(len(reader.color_files)):
+        #### first try was without it
         if not reader.is_keyframe(i):
           continue
+        ####
         args.append((reader, [i], est, debug, ob_id, 0))
 
     est.reset_object(model_pts=mesh.vertices.copy(), model_normals=mesh.vertex_normals.copy(), symmetry_tfs=symmetry_tfs, mesh=mesh)
@@ -145,5 +180,5 @@ if __name__=='__main__':
   set_seed(0)
 
   detect_type = 'mask'   # mask / box / detected
-
+  # detect_type = 'cnos'
   run_pose_estimation()
