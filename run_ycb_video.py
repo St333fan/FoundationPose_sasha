@@ -31,7 +31,8 @@ def get_mask(reader, i_frame, ob_id, detect_type):
     mask = reader.get_mask(i_frame, ob_id, type='mask_visib')
     valid = mask>0
   elif detect_type=='cnos':   #https://github.com/nv-nguyen/cnos
-    mask = cv2.imread(reader.color_files[i_frame].replace('rgb','mask_cnos'), -1)
+    #mask = cv2.imread(reader.color_files[i_frame].replace('rgb','mask_cnos'), -1)
+    mask = cv2.imread(reader.color_files[i_frame].replace('rgb','mask_sam6d_fine_sam'), -1)
     valid = mask==ob_id
   else:
     raise RuntimeError
@@ -179,6 +180,6 @@ if __name__=='__main__':
 
   set_seed(0)
 
-  detect_type = 'mask'   # mask / box / detected
-  # detect_type = 'cnos'
+  # detect_type = 'mask'   # mask / box / detected
+  detect_type = 'cnos'
   run_pose_estimation()
