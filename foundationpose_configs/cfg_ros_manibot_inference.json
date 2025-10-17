@@ -15,5 +15,7 @@
   "est_refine_iter": 5,
   "track_refine_iter": 2,
   "debug": 1,
-  "debug_dir": "./debug"
+  "debug_dir": "./debug",
+  "rgb_topic": "/hsrb/head_rgbd_sensor/rgb/image_rect_color",
+  "depth_topic": "/hsrb/head_rgbd_sensor/depth_registered/image"
 }
