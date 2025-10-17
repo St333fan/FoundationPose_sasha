@@ -52,10 +52,19 @@ def generate_instance_mask(detections, height=480, width=640):
     """
     # Initialize mask with zeros (background)
     instance_mask = np.zeros((height, width), dtype=np.uint8)
+    confidence_mask = np.zeros((height, width), dtype=np.float32)
+    
+    # Sort detections by confidence (highest first)
+    sorted_detections = sorted(detections, key=lambda x: x.get('score', 1.0), reverse=True)
     
     # Process each detection
-    for detection in detections:
+    for detection in sorted_detections:
         category_id = detection['category_id']
+        confidence = detection.get('score', 1.0)  # Default to 1.0 if no score
+        
+        # Skip detections with confidence below 0.2
+        if confidence < 0.2:
+            continue
         rle_counts = detection['segmentation']['counts']
         rle_size = detection['segmentation']['size']  # [height, width]
         
@@ -72,8 +81,13 @@ def generate_instance_mask(detections, height=480, width=640):
         if binary_mask.shape != (height, width):
             binary_mask = cv2.resize(binary_mask, (width, height), interpolation=cv2.INTER_NEAREST)
         
-        # Set pixels to category_id where object is present
-        instance_mask[binary_mask > 0] = category_id
+        # Only set pixels where this detection has higher confidence or background
+        mask_pixels = binary_mask > 0
+        higher_confidence = confidence > confidence_mask
+        update_pixels = mask_pixels & (higher_confidence | (instance_mask == 0))
+        
+        instance_mask[update_pixels] = category_id
+        confidence_mask[update_pixels] = confidence
     
     return instance_mask
 
@@ -107,7 +121,7 @@ def process_json_to_masks(json_path, output_base_dir, height=480, width=640):
     for scene_id, images in detections_by_scene.items():
         # Create scene folder path (format: 000048)
         scene_folder = os.path.join(output_base_dir, f"{scene_id:06d}")
-        mask_cnos_folder = os.path.join(scene_folder, "mask_sam6d_fine_sam")
+        mask_cnos_folder = os.path.join(scene_folder, "mask_cnos")
         
         # Create mask_cnos directory
         os.makedirs(mask_cnos_folder, exist_ok=True)
@@ -136,7 +150,7 @@ def process_json_to_masks(json_path, output_base_dir, height=480, width=640):
 def main():
     parser = argparse.ArgumentParser(description='Generate CNOS-format masks from RLE JSON')
     parser.add_argument('--json', type=str, 
-                       default='./ycbv_test_bop19/sam6d_fine_ycbv-test.json',
+                       default='./ycbv_test_bop19/sam_pbr_ycbv.json',
                        help='Path to input JSON file')
     parser.add_argument('--output_dir', type=str,
                        default='./ycbv_test_bop19/test',
